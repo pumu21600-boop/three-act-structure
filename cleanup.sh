@@ -4,13 +4,35 @@ if [ "$(id -u)" != "0" ]; then
     exit $?
 fi
 echo "清理中..."
-for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid; do
-    [ -f "$f" ] && kill -9 $(cat "$f") 2>/dev/null
+
+# 1. 杀掉所有相关进程
+for p in $(pgrep -f 'tri_key_monitor\|tri_watchdog\|tri_key_config' 2>/dev/null); do
+    kill -9 "$p" 2>/dev/null
 done
-for p in $(pgrep -f tri_key_monitor 2>/dev/null; pgrep -f tri_watchdog 2>/dev/null); do
-    kill -9 $p 2>/dev/null
+for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid; do
+    [ -f "$f" ] && kill -9 "$(cat "$f" 2>/dev/null)" 2>/dev/null
 done
 sleep 1
-rm -f /data/local/tmp/tri_key/monitor.pid /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/tri_key_monitor.sh 2>/dev/null
+
+# 2. 删除所有模块运行时文件
+rm -rf /data/local/tmp/tri_key 2>/dev/null
+rm -rf /data/local/tmp/trikey_* 2>/dev/null
+
+# 3. 清理开机自启残留
+rm -f /data/adb/service.d/tri_key_monitor.sh 2>/dev/null
 rm -f /data/adb/service.d/40trikey.sh 2>/dev/null
-echo "✅ 清理完成"
+rm -f /data/adb/service.d/*trikey* 2>/dev/null
+rm -f /data/adb/post-fs-data.d/*trikey* 2>/dev/null
+
+# 4. 恢复三段式原功能权限
+chmod 0644 /proc/tristatekey/tri_state 2>/dev/null
+
+# 5. 清理日志缓存
+rm -f /data/local/tmp/tri_key*.log 2>/dev/null
+rm -f /data/local/tmp/*trikey* 2>/dev/null
+
+# 6. 验证
+[ -z "$(pgrep -f tri_key 2>/dev/null)" ] && \
+[ ! -d "/data/local/tmp/tri_key" ] && \
+echo "✅ 清理完成，三段式功能已恢复" || \
+echo "⚠️ 清理完成，请手动检查"

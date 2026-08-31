@@ -1,7 +1,7 @@
 id=oneplus_tri_key_remapper
 name=玩转三段式
 author=袅
-version=v4.2
-versionCode=8
-description=本模块适用于有三段式按键的欧加coloros设备，更改配置后记得保存生效
-support=https://github.com/
+version=v7.3.0
+versionCode=73
+description=三段式按键自定义模块，支持多种快捷功能
+support=https://github.com/pumu21600-boop/three-act-structure

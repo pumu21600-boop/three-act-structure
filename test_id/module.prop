@@ -1,0 +1,7 @@
+id=debug_test_001
+name=Debug Test
+author=test
+version=v1.0
+versionCode=1
+description=测试模块ID冲突
+support=https://github.com/

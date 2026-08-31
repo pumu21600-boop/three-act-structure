@@ -11,15 +11,17 @@ STATE_FILE="/data/local/tmp/tri_key/action_state"
 MODE_FILE="/data/local/tmp/tri_key/last_mode"
 SELF_PATH="/data/local/tmp/tri_key/tri_key_monitor.sh"
 
-# ====== 如果父进程不是init，用setsid重新启动自己 ======
+# ====== 如果父进程不是init，用独立session重启自己 ======
 if [ "$PPID" != "1" ] && [ "$1" != "--daemon" ]; then
     # 杀掉所有旧的 tri_key 进程
-    for old in $(pgrep -f tri_key_monitor 2>/dev/null); do
+    for old in $(pgrep -f tri_key_monitor 2>> "$LOG_FILE"); do
         [ "$old" != "$$" ] && kill -9 "$old" 2>/dev/null
     done
     sleep 0.5
     rm -f "$PID_FILE" "$GUARD_FILE"
-    setsid nohup "$SELF_PATH" --daemon > /dev/null 2>&1 &
+    # 用sh显式调用，不依赖+x权限，也不用setsid（可能不存在）
+    nohup sh "$SELF_PATH" --daemon >> "$LOG_FILE" 2>&1 &
+    disown 2>/dev/null
     exit 0
 fi
 
@@ -35,12 +37,14 @@ rm -f "$PID_FILE" 2>/dev/null
 echo $$ > "$PID_FILE"
 
 # ====== 进程保护 ======
-echo $$ > /sys/fs/cgroup/cgroup.procs 2>/dev/null
+# cgroup逃逸（优先v1路径）
+for _cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/tasks; do
+    [ -f "$_cg" ] && echo $$ > "$_cg" 2>/dev/null
+done
 protect_oom() {
     echo -1000 > /proc/$$/oom_score_adj 2>/dev/null
     echo -17 > /proc/$$/oom_adj 2>/dev/null
 }
-echo $$ > /sys/fs/cgroup/cgroup.procs 2>/dev/null
 protect_oom
 
 # ====== 日志 ======
@@ -57,16 +61,15 @@ log() {
 # ====== 屏蔽三段式原功能 ======
 apply_shield() {
     if [ "$1" = "1" ]; then
-        chmod 0200 /proc/tristatekey/tri_state 2>/dev/null
+        chmod 0200 /proc/tristatekey/tri_state 2>> "$LOG_FILE"
     else
-        chmod 0644 /proc/tristatekey/tri_state 2>/dev/null
+        chmod 0644 /proc/tristatekey/tri_state 2>> "$LOG_FILE"
     fi
 }
 
 # ====== 防抖 ======
 read_stable_mode() {
     m1=$(cat /proc/tristatekey/tri_state 2>/dev/null)
-    sleep 0.08
     m2=$(cat /proc/tristatekey/tri_state 2>/dev/null)
     [ "$m1" = "$m2" ] && [ -n "$m1" ] && echo "$m1"
 }
@@ -88,11 +91,11 @@ is_persistent_app() {
 force_kill_app() {
     pkg="$1"
     if is_persistent_app "$pkg"; then
-        pm hide "$pkg" >/dev/null 2>&1
-        am force-stop "$pkg" >/dev/null 2>&1
+        pm hide "$pkg" >> "$LOG_FILE" 2>&1
+        am force-stop "$pkg" >> "$LOG_FILE" 2>&1
         log "  killed(hide+stop): $pkg"
     else
-        am force-stop "$pkg" >/dev/null 2>&1
+        am force-stop "$pkg" >> "$LOG_FILE" 2>&1
         log "  force-stop: $pkg"
     fi
 }
@@ -100,9 +103,9 @@ force_kill_app() {
 # ====== 三重唤醒 ======
 force_start() {
     pkg="$1"; intent="$2"
-    is_persistent_app "$pkg" && pm unhide "$pkg" >/dev/null 2>&1
-    am set-inactive "$pkg" false >/dev/null 2>&1
-    cmd appops set "$pkg" RUN_IN_BACKGROUND allow >/dev/null 2>&1
+    is_persistent_app "$pkg" && pm unhide "$pkg" >> "$LOG_FILE" 2>&1
+    am set-inactive "$pkg" false >> "$LOG_FILE" 2>&1
+    cmd appops set "$pkg" RUN_IN_BACKGROUND allow >> "$LOG_FILE" 2>&1
     result=$(am start $intent 2>&1)
     if ! echo "$result" | grep -q "Starting:"; then
         log "  ⚠ am start异常: $(echo "$result" | head -1)"
@@ -110,7 +113,7 @@ force_start() {
     fi
     waited=0
     while [ $waited -lt 20 ]; do
-        pidof "$pkg" >/dev/null 2>&1 && return 0
+        pidof "$pkg" >> "$LOG_FILE" 2>&1 && return 0
         sleep 0.1; waited=$((waited + 1))
     done
     return 1
@@ -125,15 +128,15 @@ quick_launch() {
 
 # ====== 手电筒 ======
 flashlight_on() {
-    echo 0 > /sys/class/leds/led:torch_0/brightness 2>/dev/null
-    echo 0 > /sys/class/leds/led:switch_0/brightness 2>/dev/null
-    echo 500 > /sys/class/leds/led:torch_0/brightness 2>/dev/null
-    echo 1 > /sys/class/leds/led:switch_0/brightness 2>/dev/null
+    echo 0 > /sys/class/leds/led:torch_0/brightness 2>> "$LOG_FILE"
+    echo 0 > /sys/class/leds/led:switch_0/brightness 2>> "$LOG_FILE"
+    echo 500 > /sys/class/leds/led:torch_0/brightness 2>> "$LOG_FILE"
+    echo 1 > /sys/class/leds/led:switch_0/brightness 2>> "$LOG_FILE"
     log "  🔦 手电筒已开启"
 }
 flashlight_off() {
-    echo 0 > /sys/class/leds/led:torch_0/brightness 2>/dev/null
-    echo 0 > /sys/class/leds/led:switch_0/brightness 2>/dev/null
+    echo 0 > /sys/class/leds/led:torch_0/brightness 2>> "$LOG_FILE"
+    echo 0 > /sys/class/leds/led:switch_0/brightness 2>> "$LOG_FILE"
     log "  🔦 手电筒已关闭"
 }
 
@@ -141,7 +144,9 @@ flashlight_off() {
 start_watchdog() {
     old_guard=$(cat "$GUARD_FILE" 2>/dev/null)
     [ -n "$old_guard" ] && kill -9 "$old_guard" 2>/dev/null
-    setsid nohup /data/local/tmp/tri_key/tri_watchdog.sh > /dev/null 2>&1 &
+    # 用sh显式调用看门狗
+    nohup sh /data/local/tmp/tri_key/tri_watchdog.sh >> "$LOG_FILE" 2>&1 &
+    disown 2>/dev/null
     echo $! > "$GUARD_FILE"
 }
 
@@ -153,9 +158,24 @@ do_action_async() {
 
     [ -n "$RUNNER_PID" ] && kill -0 "$RUNNER_PID" 2>/dev/null && {
         kill -9 "$RUNNER_PID" 2>/dev/null
-        wait "$RUNNER_PID" 2>/dev/null
         log "  ⊘ 取消旧action"
     }
+
+    # 预先设置active_app（立即写入STATE_FILE，不依赖异步子shell）
+    case "$func" in
+        record)           set_active_app "com.coloros.soundrecorder" ;;
+        screenrecord)     set_active_app "com.oplus.screenrecorder" ;;
+        ai_chat)          set_active_app "com.heytap.speechassist" ;;
+        music_recognize)  set_active_app "com.coloros.colordirectservice" ;;
+        flashlight)       set_active_app "__flashlight__" ;;
+        wechat_scan|wechat_pay) set_active_app "com.tencent.mm" ;;
+        alipay_scan|alipay_pay) set_active_app "com.eg.android.AlipayGphone" ;;
+        camera_open)      set_active_app "com.oplus.camera" ;;
+        xiaobu_screen)    set_active_app "com.coloros.colordirectservice" ;;
+        xiaobu_flashnote) set_active_app "com.oplus.gleanerservice" ;;
+        ai_voice_note)    set_active_app "com.coloros.accessibilityassistant" ;;
+        calculator)       set_active_app "com.coloros.calculator" ;;
+    esac
 
     (
         log "→ ${pos} ${func}"
@@ -163,42 +183,54 @@ do_action_async() {
         case "$func" in
             record)
                 force_start "com.coloros.soundrecorder" \
-                    "-a com.oplus.soundrecorder.open_quick_recording -n com.coloros.soundrecorder/oplus.multimedia.soundrecorder.slidebar.TransparentActivity -f 0x14000000"
-                set_active_app "com.coloros.soundrecorder" ;;
+                    "-a com.oplus.soundrecorder.open_quick_recording -n com.coloros.soundrecorder/oplus.multimedia.soundrecorder.slidebar.TransparentActivity -f 0x14000000" ;;
             screenrecord)
                 force_start "com.oplus.screenrecorder" \
-                    "-a oplus.intent.action.SCREENRECORDER_START -n com.oplus.screenrecorder/.MainActivity -f 0x14000000"
-                set_active_app "com.oplus.screenrecorder" ;;
+                    "-a oplus.intent.action.SCREENRECORDER_START -n com.oplus.screenrecorder/.MainActivity -f 0x14000000" ;;
             screenshot)
-                input keyevent KEYCODE_SYSRQ >/dev/null 2>&1 ;;
+                input keyevent KEYCODE_SYSRQ >> "$LOG_FILE" 2>&1 ;;
             ai_chat)
                 force_start "com.heytap.speechassist" \
-                    "-n com.heytap.speechassist/.aichatlive.ui.AIChatLiveAiActivity -f 0x14000000"
-                set_active_app "com.heytap.speechassist" ;;
+                    "-n com.heytap.speechassist/.aichatlive.ui.AIChatLiveAiActivity -f 0x14000000" ;;
             music_recognize)
                 force_start "com.coloros.colordirectservice" \
-                    "-n com.coloros.colordirectservice/com.coloros.directui.identifymusic.RecognizeMusicPermissionActivity -f 0x14000000"
-                set_active_app "com.coloros.colordirectservice" ;;
+                    "-n com.coloros.colordirectservice/com.coloros.directui.identifymusic.RecognizeMusicPermissionActivity -f 0x14000000" ;;
             flashlight)
-                flashlight_on; set_active_app "__flashlight__" ;;
+                flashlight_on ;;
             wechat_scan)
-                quick_launch "-n com.tencent.mm/.plugin.scanner.ui.BaseScanUI -f 0x14000000"
-                set_active_app "com.tencent.mm" ;;
+                quick_launch "-n com.tencent.mm/.plugin.scanner.ui.BaseScanUI -f 0x14000000" ;;
             wechat_pay)
-                quick_launch "-n com.tencent.mm/.plugin.offline.ui.WalletOfflineCoinPurseUI -f 0x14000000"
-                set_active_app "com.tencent.mm" ;;
+                force_start "com.tencent.mm" \
+                    "-n com.tencent.mm/.plugin.offline.ui.WalletOfflineCoinPurseUI -f 0x14000000" ;;
             alipay_scan)
-                quick_launch '-d alipayqr://platformapi/startapp?saId=10000007'
-                set_active_app "com.eg.android.AlipayGphone" ;;
+                quick_launch '-d alipayqr://platformapi/startapp?saId=10000007' ;;
             alipay_pay)
-                quick_launch '-d alipayqr://platformapi/startapp?saId=20000056'
-                set_active_app "com.eg.android.AlipayGphone" ;;
+                quick_launch '-d alipayqr://platformapi/startapp?saId=20000056' ;;
             custom)
-                [ -n "$CUSTOM_CMD" ] && eval "$CUSTOM_CMD" >/dev/null 2>&1 ;;
+                [ -n "$CUSTOM_CMD" ] && eval "$CUSTOM_CMD" >> "$LOG_FILE" 2>&1 ;;
             camera_open)
-                am force-stop com.oplus.camera 2>/dev/null
-                am start -W com.oplus.camera/.Camera >/dev/null 2>&1 &
-                log "  📷 打开相机" ;;
+                am force-stop com.oplus.camera 2>> "$LOG_FILE"
+                am start -W com.oplus.camera/.Camera >> "$LOG_FILE" 2>&1 & ;;
+            xiaobu_screen)
+                am start-foreground-service -n com.coloros.colordirectservice/.InvokeEntranceService -a com.coloros.directui.InvokeEntranceService >> "$LOG_FILE" 2>&1 ;;
+            xiaobu_flashnote)
+                # 使用am start-foreground-service触发小布闪记（保留extras参数）
+                am set-inactive com.oplus.gleanerservice false >/dev/null 2>&1
+                cmd appops set com.oplus.gleanerservice RUN_IN_BACKGROUND allow >/dev/null 2>&1
+                sleep 0.2
+                result=$(am start-foreground-service \
+                    -a oplus.gleanerservice.intent.action.COLLECT_DATA \
+                    -n com.oplus.gleanerservice/.flashnotes.business.service.DataCollectService \
+                    --ei triggerType 1 2>&1)
+                if echo "$result" | grep -qi "Service started\|Starting:"; then
+                    log "  📝 小布闪记"
+                else
+                    log "  ⚠ 小布闪记异常: $(echo "$result" | head -1)"
+                fi ;;
+            ai_voice_note)
+                quick_launch "-n com.coloros.accessibilityassistant/.floatpanel.MainActivity -f 0x14000000" ;;
+            calculator)
+                quick_launch "-n com.coloros.calculator/com.android.calculator2.Calculator -f 0x14000000" ;;
             off)
                 active_pkg=$(get_active_app)
                 if [ "$active_pkg" = "__flashlight__" ]; then
@@ -207,11 +239,6 @@ do_action_async() {
                     force_kill_app "$active_pkg"; clear_active_app
                 else
                     flashlight_off
-                    for pkg in com.coloros.soundrecorder com.oplus.screenrecorder \
-                        com.heytap.speechassist com.coloros.colordirectservice \
-                        com.tencent.mm com.eg.android.AlipayGphone com.oplus.camera; do
-                        pidof "$pkg" >/dev/null 2>&1 && force_kill_app "$pkg"
-                    done
                 fi ;;
         esac
     ) &
@@ -219,6 +246,28 @@ do_action_async() {
 }
 
 # ====== 初始化 ======
+mkdir -p /data/local/tmp/tri_key 2>/dev/null
+
+# 写入启动标记（只要脚本开始执行就会写这个文件）
+echo "monitor_init:$(date '+%s')" > /data/local/tmp/tri_key/monitor.tag 2>/dev/null
+
+# 复制脚本到工作目录（供看门狗重启使用）
+cp -f /data/adb/modules/oneplus_tri_key_remapper/tri_key_monitor.sh /data/local/tmp/tri_key/tri_key_monitor.sh 2>/dev/null
+cp -f /data/adb/modules/oneplus_tri_key_remapper/tri_watchdog.sh /data/local/tmp/tri_key/tri_watchdog.sh 2>/dev/null
+chmod 755 /data/local/tmp/tri_key/*.sh 2>/dev/null
+
+# 创建默认配置（供WebUI读取）
+if [ ! -f "$CONFIG_FILE" ]; then
+    cat > "$CONFIG_FILE" << 'EOF'
+#!/system/bin/sh
+UP_FUNC="off"
+MID_FUNC="off"
+DOWN_FUNC="off"
+CUSTOM_CMD="echo hello"
+SHIELD_TRIKEY="0"
+EOF
+fi
+
 log "====== 监控启动 PID:$$ PPID:$PPID ======"
 
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
@@ -239,6 +288,9 @@ start_watchdog
 _oom_cnt=0
 
 while true; do
+    # 更新心跳
+    echo "alive:$(date '+%s')" > /data/local/tmp/tri_key/heartbeat 2>/dev/null
+
     mode=$(cat /proc/tristatekey/tri_state 2>/dev/null)
 
     [ -z "$mode" ] && { sleep 0.1; continue; }
@@ -247,7 +299,7 @@ while true; do
         stable_mode=$(read_stable_mode)
         if [ -z "$stable_mode" ] || [ "$stable_mode" != "$mode" ]; then
             # 不更新LAST_MODE，让状态稳定后重试
-            sleep 0.2
+            sleep 0.05
             continue
         fi
 
@@ -268,13 +320,17 @@ while true; do
     fi
 
     _oom_cnt=$((_oom_cnt + 1))
-    [ $((_oom_cnt % 20)) -eq 0 ] && echo $$ > /sys/fs/cgroup/cgroup.procs 2>/dev/null
-protect_oom
+    [ $((_oom_cnt % 20)) -eq 0 ] && {
+        for _cg in /sys/fs/cgroup/cgroup.procs /sys/fs/cgroup/unified/cgroup.procs /dev/cpuctl/tasks /sys/fs/cgroup/uid_0/cgroup.procs; do
+            echo $$ > "$_cg" 2>/dev/null
+        done
+        protect_oom
+    }
 
-    # 看门狗健康检查（每30轮约4.5秒）
+    # 看门狗健康检查（每30轮约1.5秒）
     [ $((_oom_cnt % 30)) -eq 0 ] && { 
         gpid=$(cat "$GUARD_FILE" 2>/dev/null); 
         [ -n "$gpid" ] && ! kill -0 "$gpid" 2>/dev/null && start_watchdog; 
     }
-    sleep 0.15
+    sleep 0.05
 done

@@ -2,6 +2,7 @@
 # WebUI保存配置辅助脚本
 UP="$1"; MID="$2"; DN="$3"; SHIELD="$4"
 CFG="/data/local/tmp/tri_key/tri_key_config.sh"
+mkdir -p /data/local/tmp/tri_key 2>/dev/null
 cat > "$CFG" << EOF
 #!/system/bin/sh
 UP_FUNC="$UP"
