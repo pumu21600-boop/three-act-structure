@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>玩转三段式功能</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:linear-gradient(145deg,#121214 0%,#1c1c1e 100%);color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding:20px 16px 40px;display:flex;flex-direction:column;align-items:center}
+.page{max-width:420px;width:100%}
+.header{text-align:center;margin-bottom:24px;padding:8px 0}
+.header-icon{width:56px;height:56px;background:linear-gradient(135deg,#007aff,#5856d6);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;box-shadow:0 8px 24px rgba(0,122,255,.35)}
+.header-icon svg{width:28px;height:28px;fill:#fff}
+.header h1{font-size:20px;font-weight:700;letter-spacing:.3px}
+.header p{font-size:13px;color:#8e8e93;margin-top:4px}
+.card{background:rgba(44,44,46,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:16px;padding:16px;margin-bottom:16px;border:1px solid rgba(255,255,255,.06);box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.func-row{display:flex;align-items:center;padding:14px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+.func-row:last-of-type{border-bottom:none}
+.func-label{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:500;min-width:60px;color:#e5e5ea}
+.func-label .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot.up{background:#34c759}.dot.mid{background:#af52de}.dot.down{background:#ff9500}
+.func-select-wrap{flex:1;position:relative;margin-left:12px}
+.func-picker{width:100%;background:rgba(28,28,30,.8);border:1px solid rgba(255,255,255,.08);border-radius:10px;color:#f5f5f7;padding:10px 32px 10px 12px;font-size:14px;cursor:pointer;position:relative;user-select:none;transition:border-color .2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.func-picker:hover,.func-picker.active{border-color:#007aff}
+.func-picker::after{content:"▾";position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;color:#636366;pointer-events:none}
+.dropdown-panel{position:fixed;z-index:1000;background:rgba(36,36,38,.98);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 8px 40px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.05);padding:6px;max-height:320px;overflow-y:auto;opacity:0;transform:scale(.95) translateY(-4px);transition:opacity .2s,transform .2s;pointer-events:none;min-width:180px}
+.dropdown-panel.show{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}
+.dropdown-panel .opt{padding:10px 14px;font-size:14px;color:#e5e5ea;cursor:pointer;border-radius:8px;transition:background .15s;display:flex;align-items:center;gap:10px}
+.dropdown-panel .opt:hover{background:rgba(255,255,255,.08)}
+.dropdown-panel .opt.selected{background:rgba(0,122,255,.2);color:#fff}
+.dropdown-panel .opt.selected::after{content:"✓";margin-left:auto;color:#007aff;font-weight:600}
+.dropdown-panel .opt+.opt{margin-top:2px}
+.dropdown-panel::-webkit-scrollbar{width:4px}
+.dropdown-panel::-webkit-scrollbar-track{background:transparent}
+.dropdown-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+.shield-row{display:flex;align-items:center;justify-content:space-between;padding:14px 6px;border-top:1px solid rgba(255,255,255,.06);margin-top:4px}
+.shield-left{display:flex;align-items:center;gap:10px}
+.shield-icon{width:32px;height:32px;background:rgba(255,59,48,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.shield-icon svg{width:16px;height:16px;fill:#ff3b30}
+.shield-text{font-size:14px;color:#e5e5ea}
+.shield-text small{display:block;font-size:11px;color:#636366;margin-top:2px}
+.toggle{position:relative;display:inline-block;width:48px;height:28px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .sl{position:absolute;cursor:pointer;inset:0;background:#39393d;border-radius:28px;transition:.3s}
+.toggle .sl::before{content:"";position:absolute;height:22px;width:22px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+.toggle input:checked+.sl{background:#30d158}
+.toggle input:checked+.sl::before{transform:translateX(20px)}
+.btn-save{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#007aff,#5856d6);color:#fff;transition:transform .15s,box-shadow .2s;box-shadow:0 4px 16px rgba(0,122,255,.3);letter-spacing:.5px}
+.btn-save:active{transform:scale(.97)}
+.status-bar{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:#636366;padding:4px 0;margin-top:8px;flex-wrap:wrap}
+.status-bar .tag{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:3px 8px;border-radius:6px;color:#8e8e93}
+.status-bar .tag span{color:#30d158;font-weight:600}
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(44,44,46,.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;opacity:0;transition:all .35s cubic-bezier(.4,0,.2,1);z-index:999;pointer-events:none;white-space:nowrap;border:1px solid rgba(255,255,255,.08)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.footer{text-align:center;font-size:11px;color:#48484a;margin-top:20px;letter-spacing:.2px}
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="page">
+<div class="header"><div class="header-icon"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div><h1>玩转三段式功能</h1><p>配置你的三段式快捷键</p></div>
+<div class="card">
+<div class="func-row"><div class="func-label"><span class="dot up"></span>上拨</div><div class="func-select-wrap"><div class="func-picker" id="upPicker" data-target="upSel">关闭</div><select class="func-select" id="upSel" style="display:none"><option value="off">关闭</option><option value="record">后台录音</option><option value="screenrecord">录屏</option><option value="screenshot">截屏</option><option value="ai_chat">AI实景对话</option><option value="music_recognize">音乐识别</option><option value="flashlight">手电筒</option><option value="wechat_scan">微信扫一扫</option><option value="wechat_pay">微信付款码</option><option value="alipay_scan">支付宝扫一扫</option><option value="alipay_pay">支付宝付款码</option><option value="camera_open">打开相机</option></select></div></div>
+<div class="func-row"><div class="func-label"><span class="dot mid"></span>中拨</div><div class="func-select-wrap"><div class="func-picker" id="midPicker" data-target="midSel">关闭</div><select class="func-select" id="midSel" style="display:none"><option value="off">关闭</option><option value="record">后台录音</option><option value="screenrecord">录屏</option><option value="screenshot">截屏</option><option value="ai_chat">AI实景对话</option><option value="music_recognize">音乐识别</option><option value="flashlight">手电筒</option><option value="wechat_scan">微信扫一扫</option><option value="wechat_pay">微信付款码</option><option value="alipay_scan">支付宝扫一扫</option><option value="alipay_pay">支付宝付款码</option><option value="camera_open">打开相机</option></select></div></div>
+<div class="func-row"><div class="func-label"><span class="dot down"></span>下拨</div><div class="func-select-wrap"><div class="func-picker" id="dnPicker" data-target="dnSel">关闭</div><select class="func-select" id="dnSel" style="display:none"><option value="off">关闭</option><option value="record">后台录音</option><option value="screenrecord">录屏</option><option value="screenshot">截屏</option><option value="ai_chat">AI实景对话</option><option value="music_recognize">音乐识别</option><option value="flashlight">手电筒</option><option value="wechat_scan">微信扫一扫</option><option value="wechat_pay">微信付款码</option><option value="alipay_scan">支付宝扫一扫</option><option value="alipay_pay">支付宝付款码</option><option value="camera_open">打开相机</option></select></div></div>
+<div class="shield-row"><div class="shield-left"><div class="shield-icon"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg></div><div class="shield-text">干掉原三段式功能<small>系统不会自动切换静音/振动/响铃</small></div></div><label class="toggle"><input type="checkbox" id="shieldToggle"><span class="sl"></span></label></div></div>
+<button class="btn-save" onclick="apply()">保存配置</button>
+<div class="status-bar"><span class="tag">上拨：<span id="upCur">off</span></span><span class="tag">中拨：<span id="midCur">off</span></span><span class="tag">下拨：<span id="dnCur">off</span></span></div>
+<div class="footer">版本号v4.2</div><div style="text-align:center;font-size:11px;color:#636366;margin-top:10px;letter-spacing:.2px">问题反馈：3114490265@qq.com</div></div>
+<div class="dropdown-panel" id="dropdownPanel"></div>
+<script>
+function exec(cmd){return new Promise((resolve)=>{const cb='ksu_cb_'+Date.now();window[cb]=(err,out)=>{resolve({errno:err,stdout:out||''});delete window[cb]};try{ksu.exec(cmd,JSON.stringify({}),cb)}catch(e){resolve({errno:1,stdout:String(e)})}})}
+const CONFIG_PATH='/data/local/tmp/tri_key/tri_key_config.sh';
+const OPTIONS=[{value:'off',label:'关闭'},{value:'record',label:'后台录音'},{value:'screenrecord',label:'录屏'},{value:'screenshot',label:'截屏'},{value:'ai_chat',label:'AI实景对话'},{value:'music_recognize',label:'音乐识别'},{value:'flashlight',label:'手电筒'},{value:'wechat_scan',label:'微信扫一扫'},{value:'wechat_pay',label:'微信付款码'},{value:'alipay_scan',label:'支付宝扫一扫'},{value:'alipay_pay',label:'支付宝付款码'},{value:'camera_open',label:'打开相机'}];
+let activePicker=null;
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',2000)}
+function openDropdown(picker){const rect=picker.getBoundingClientRect();const panel=document.getElementById('dropdownPanel');const selectId=picker.dataset.target;const select=document.getElementById(selectId);const currentVal=select.value;panel.innerHTML='';OPTIONS.forEach(opt=>{const div=document.createElement('div');div.className='opt'+(opt.value===currentVal?' selected':'');div.textContent=opt.label;div.dataset.value=opt.value;div.onclick=function(e){e.stopPropagation();select.value=opt.value;picker.textContent=opt.label;closeDropdown();picker.classList.remove('active')};panel.appendChild(div)});panel.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-200))+'px';panel.style.top=(rect.bottom+6)+'px';panel.style.width=Math.max(180,rect.width)+'px';panel.classList.add('show');picker.classList.add('active');activePicker=picker}
+function closeDropdown(){const panel=document.getElementById('dropdownPanel');panel.classList.remove('show');if(activePicker){activePicker.classList.remove('active');activePicker=null}}
+document.addEventListener('click',function(e){const picker=e.target.closest('.func-picker');if(picker){e.stopPropagation();if(activePicker===picker&&document.getElementById('dropdownPanel').classList.contains('show')){closeDropdown()}else{openDropdown(picker)}return}closeDropdown()});
+async function readConfig(){const r=await exec('cat '+CONFIG_PATH);if(r.errno!==0){toast('读取失败');return}const up=r.stdout.match(/UP_FUNC="([^"]*)"/);const mid=r.stdout.match(/MID_FUNC="([^"]*)"/);const dn=r.stdout.match(/DOWN_FUNC="([^"]*)"/);const shield=r.stdout.match(/SHIELD_TRIKEY="([^"]*)"/);const upVal=up?up[1]:'off';const midVal=mid?mid[1]:'off';const dnVal=dn?dn[1]:'off';document.getElementById('upSel').value=upVal;document.getElementById('midSel').value=midVal;document.getElementById('dnSel').value=dnVal;document.getElementById('upPicker').textContent=OPTIONS.find(o=>o.value===upVal)?.label||'关闭';document.getElementById('midPicker').textContent=OPTIONS.find(o=>o.value===midVal)?.label||'关闭';document.getElementById('dnPicker').textContent=OPTIONS.find(o=>o.value===dnVal)?.label||'关闭';document.getElementById('shieldToggle').checked=shield&&shield[1]==='1';document.getElementById('upCur').textContent=upVal;document.getElementById('midCur').textContent=midVal;document.getElementById('dnCur').textContent=dnVal}
+async function apply(){const up=document.getElementById('upSel').value;const mid=document.getElementById('midSel').value;const dn=document.getElementById('dnSel').value;const shield=document.getElementById('shieldToggle').checked?'1':'0';toast('保存中...');const cfg=CONFIG_PATH;const lines=['echo "#!/system/bin/sh" > '+cfg,'echo "UP_FUNC=\\"'+up+'\\"" >> '+cfg,'echo "MID_FUNC=\\"'+mid+'\\"" >> '+cfg,'echo "DOWN_FUNC=\\"'+dn+'\\"" >> '+cfg,'echo "CUSTOM_CMD=\\"echo hello\\"" >> '+cfg,'echo "SHIELD_TRIKEY=\\"'+shield+'\\"" >> '+cfg];const cmd=lines.join(' && ');const r=await exec(cmd);if(r.errno!==0){toast('保存失败');return}await exec('kill -9 $(cat /data/local/tmp/tri_key/monitor.pid 2>/dev/null) 2>/dev/null');document.getElementById('upCur').textContent=up;document.getElementById('midCur').textContent=mid;document.getElementById('dnCur').textContent=dn;toast('已保存')}
+readConfig();
+</script>
+</body>
+</html>
