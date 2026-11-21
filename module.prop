@@ -1,7 +1,7 @@
 id=oneplus_tri_key_remapper
 name=玩转三段式
 author=袅
-version=v7.3.0
-versionCode=73
+version=v7.4.0
+versionCode=74
 description=三段式按键自定义模块，支持多种快捷功能
 support=https://github.com/pumu21600-boop/three-act-structure

@@ -2,12 +2,11 @@
 # 三段式模块卸载脚本 - 彻底清理所有残留
 
 # 1. 杀掉所有相关进程（不留活口）
-for p in $(pgrep -f 'tri_key_monitor\|tri_watchdog\|tri_key_config' 2>/dev/null); do
+for p in $(pgrep -f 'tri_key_monitor\|tri_watchdog\|tri_key_config\|tri_grab' 2>/dev/null); do
     kill -9 "$p" 2>/dev/null
 done
-
 # 2. 通过PID文件杀
-for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid; do
+for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid /data/local/tmp/tri_key/grab.pid; do
     [ -f "$f" ] && kill -9 "$(cat "$f" 2>/dev/null)" 2>/dev/null
 done
 

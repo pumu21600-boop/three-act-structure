@@ -1,5 +1,5 @@
 #!/system/bin/sh
-UP_FUNC="xiaobu_flashnote"
+UP_FUNC="off"
 MID_FUNC="off"
 DOWN_FUNC="off"
 CUSTOM_CMD="echo hello"

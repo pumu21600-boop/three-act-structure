@@ -12,5 +12,5 @@ CUSTOM_CMD="echo hello"
 SHIELD_TRIKEY="$SHIELD"
 EOF
 echo "saved"
-# 杀掉主进程让看门狗重启
-kill -9 $(cat /data/local/tmp/tri_key/monitor.pid 2>/dev/null) 2>/dev/null
+# 通知主进程热重载（不杀进程，避免4~5秒空窗期）
+touch /data/local/tmp/tri_key/reload.flag 2>/dev/null

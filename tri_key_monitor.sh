@@ -10,6 +10,7 @@ GUARD_FILE="/data/local/tmp/tri_key/guard.pid"
 STATE_FILE="/data/local/tmp/tri_key/action_state"
 MODE_FILE="/data/local/tmp/tri_key/last_mode"
 SELF_PATH="/data/local/tmp/tri_key/tri_key_monitor.sh"
+RELOAD_FLAG="/data/local/tmp/tri_key/reload.flag"
 
 # ====== 如果父进程不是init，用独立session重启自己 ======
 if [ "$PPID" != "1" ] && [ "$1" != "--daemon" ]; then
@@ -36,6 +37,14 @@ fi
 rm -f "$PID_FILE" 2>/dev/null
 echo $$ > "$PID_FILE"
 
+# 清理旧 grab 进程（避免重复占用导致新版启动失败）
+_oldg=$(cat /data/local/tmp/tri_key/grab.pid 2>/dev/null)
+if [ -n "$_oldg" ] && kill -0 "$_oldg" 2>/dev/null; then
+    kill "$_oldg" 2>/dev/null
+    sleep 0.2
+fi
+rm -f /data/local/tmp/tri_key/grab.pid 2>/dev/null
+
 # ====== 进程保护 ======
 # cgroup逃逸（优先v1路径）
 for _cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/tasks; do
@@ -58,12 +67,43 @@ log() {
     echo "[$(date '+%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
-# ====== 屏蔽三段式原功能 ======
+# ====== 屏蔽三段式原功能（EVIOCGRAB 独占 event5）======
+GRAB_BIN="/data/local/tmp/tri_key/tri_grab"
+GRAB_PID_FILE="/data/local/tmp/tri_key/grab.pid"
+GRAB_LOG="/data/local/tmp/tri_key/grab.log"
+
+grab_alive() {
+    gp=$(cat "$GRAB_PID_FILE" 2>/dev/null)
+    [ -n "$gp" ] && kill -0 "$gp" 2>/dev/null
+}
+
+start_grab() {
+    [ -x "$GRAB_BIN" ] || { log "  ⚠ grab二进制缺失"; return 1; }
+    grab_alive && return 0
+    nohup "$GRAB_BIN" >> "$GRAB_LOG" 2>&1 &
+    echo $! > "$GRAB_PID_FILE"
+    sleep 0.2
+    if grab_alive; then
+        log "  🛡 已独占 event5，原生功能屏蔽中"
+    else
+        log "  ⚠ grab启动失败: $(tail -1 "$GRAB_LOG" 2>/dev/null)"
+    fi
+}
+
+stop_grab() {
+    gp=$(cat "$GRAB_PID_FILE" 2>/dev/null)
+    if [ -n "$gp" ] && kill -0 "$gp" 2>/dev/null; then
+        kill "$gp" 2>/dev/null
+        log "  🔓 已释放 event5，原生功能恢复"
+    fi
+    rm -f "$GRAB_PID_FILE" 2>/dev/null
+}
+
 apply_shield() {
     if [ "$1" = "1" ]; then
-        chmod 0200 /proc/tristatekey/tri_state 2>> "$LOG_FILE"
+        start_grab
     else
-        chmod 0644 /proc/tristatekey/tri_state 2>> "$LOG_FILE"
+        stop_grab
     fi
 }
 
@@ -254,7 +294,9 @@ echo "monitor_init:$(date '+%s')" > /data/local/tmp/tri_key/monitor.tag 2>/dev/n
 # 复制脚本到工作目录（供看门狗重启使用）
 cp -f /data/adb/modules/oneplus_tri_key_remapper/tri_key_monitor.sh /data/local/tmp/tri_key/tri_key_monitor.sh 2>/dev/null
 cp -f /data/adb/modules/oneplus_tri_key_remapper/tri_watchdog.sh /data/local/tmp/tri_key/tri_watchdog.sh 2>/dev/null
+cp -f /data/adb/modules/oneplus_tri_key_remapper/tri_grab /data/local/tmp/tri_key/tri_grab 2>/dev/null
 chmod 755 /data/local/tmp/tri_key/*.sh 2>/dev/null
+chmod 755 /data/local/tmp/tri_key/tri_grab 2>/dev/null
 
 # 创建默认配置（供WebUI读取）
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -290,6 +332,14 @@ _oom_cnt=0
 while true; do
     # 更新心跳
     echo "alive:$(date '+%s')" > /data/local/tmp/tri_key/heartbeat 2>/dev/null
+
+    # 配置热重载（WebUI保存后立即生效，无需杀进程）
+    if [ -f "$RELOAD_FLAG" ]; then
+        rm -f "$RELOAD_FLAG" 2>/dev/null
+        [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+        apply_shield "$SHIELD_TRIKEY"
+        log "  ⟳ 配置已热重载 UP=$UP_FUNC MID=$MID_FUNC DN=$DOWN_FUNC SHIELD=$SHIELD_TRIKEY"
+    fi
 
     mode=$(cat /proc/tristatekey/tri_state 2>/dev/null)
 
@@ -332,5 +382,8 @@ while true; do
         gpid=$(cat "$GUARD_FILE" 2>/dev/null); 
         [ -n "$gpid" ] && ! kill -0 "$gpid" 2>/dev/null && start_watchdog; 
     }
+
+    # grab 保活（每20轮约1秒）：挂了立刻重启，防止原生功能复活
+    [ $((_oom_cnt % 20)) -eq 0 ] && [ "$SHIELD_TRIKEY" = "1" ] && ! grab_alive && start_grab
     sleep 0.05
 done

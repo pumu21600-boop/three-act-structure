@@ -6,10 +6,10 @@ fi
 echo "清理中..."
 
 # 1. 杀掉所有相关进程
-for p in $(pgrep -f 'tri_key_monitor\|tri_watchdog\|tri_key_config' 2>/dev/null); do
+for p in $(pgrep -f 'tri_key_monitor\|tri_watchdog\|tri_key_config\|tri_grab' 2>/dev/null); do
     kill -9 "$p" 2>/dev/null
 done
-for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid; do
+for f in /data/local/tmp/tri_key/guard.pid /data/local/tmp/tri_key/monitor.pid /data/local/tmp/tri_key/grab.pid; do
     [ -f "$f" ] && kill -9 "$(cat "$f" 2>/dev/null)" 2>/dev/null
 done
 sleep 1
