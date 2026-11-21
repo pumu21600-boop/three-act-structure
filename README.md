@@ -20,17 +20,11 @@
 - **多重保活**：独立看门狗 + OOM 保护 + cgroup 逃逸 + 进程自重启
 - **干净卸载**：卸载脚本完整恢复原功能，不留进程与文件
 
-## 「干掉原三段式」是怎么做到的
+## 「干掉原三段式」原理
 
-这是 v7.4.0 的核心改动，值得单独说明。
+原生功能通过 `/dev/input/event5`（`oplus,hall_tri_state_key`）上报 `KEY_F3` 给 `system_server`。模块内置 `tri_grab` 对该设备做 `EVIOCGRAB` 独占，系统收不到事件，静音/振动/响铃切换即失效。模块自身仍从 `/proc/tristatekey/tri_state` 读状态，功能不受影响。
 
-**曾经走过的错路**：早期版本用 `chmod 0200 /proc/tristatekey/tri_state` 想拦系统读取。这从未生效过 —— `/proc/tristatekey/tri_state` 只是个调试观测节点，原生功能根本不读它。
-
-**真实通道**：原生三段式功能走的是 Linux input 子系统。设备 `/dev/input/event5`（名称 `oplus,hall_tri_state_key`）上报 `KEY_F3` 事件，由 `system_server` 监听消费（已验证 system_server 持有该设备的 fd）。
-
-**现方案**：模块内置一个小 C 程序 `tri_grab`，对该设备做 `EVIOCGRAB` 独占。内核层面的独占会让其他进程读不到事件，于是 system_server 收不到 `KEY_F3`，原生切换彻底失效。模块自己的监控脚本仍从 `/proc/tristatekey/tri_state` 读状态，不受影响。
-
-> 主脚本会周期性检查 `tri_grab` 是否存活，挂掉立即重启；关掉开关则释放独占，原生功能立刻恢复。
+主脚本会周期检查 `tri_grab` 存活，挂掉立即重启；关掉开关则释放独占，原生功能恢复。
 
 ## 兼容性
 
@@ -92,13 +86,9 @@
 gcc -O2 -static -o tri_grab tri_grab.c
 ```
 
-## 版本更迭
+## 版本
 
-| 版本 | 说明 |
-|------|------|
-| [v4.2](https://github.com/pumu21600-boop/three-act-structure/tree/v4.2) | 初版：三段式按键重映射 |
-| [v7.3.0](https://github.com/pumu21600-boop/three-act-structure/tree/v7.3.0) | WebUI 样式调节、运行日志窗口、服务区机制 |
-| [v7.4.0](https://github.com/pumu21600-boop/three-act-structure/tree/v7.4.0) | **屏蔽原理重写**：`chmod` 改 `EVIOCGRAB` 独占 event5，真正生效；配置热重载消除 4~5 秒空窗；下拨关闭修复；`tri_grab` 保活 |
+当前 **v7.4.0**。历史 tag 可在 [Releases](https://github.com/pumu21600-boop/three-act-structure/releases) 查看。
 
 ## 许可证
 
